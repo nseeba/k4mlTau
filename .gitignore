@@ -17,3 +17,8 @@ dev/
 
 # Generated local setup wrapper
 setup.sh
+
+# Release upload staging
+release-artifacts/
+*.tar.gz
+*.sha256
