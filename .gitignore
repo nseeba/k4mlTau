@@ -1,0 +1,19 @@
+# CMake/build products
+build/
+build-*/
+install/
+
+# Local Gaudi outputs and debug dumps
+*.root
+*.jsonl
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Local developer validation helpers
+dev/
+
+# Generated local setup wrapper
+setup.sh
