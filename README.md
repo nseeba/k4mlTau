@@ -22,22 +22,39 @@ git clone git@github.com:nseeba/k4mlTau.git
 cd k4mlTau
 ```
 
-Download a model bundle from the GitHub release page and unpack it. A model
-bundle must contain:
+Download the model bundle from the repository releases:
 
 ```text
-model.onnx
-metadata.json
+https://github.com/nseeba/k4mlTau/releases/tag/v0.1.0
 ```
 
-Example layout after unpacking:
+Use the asset:
 
 ```text
-k4mlTau/
-  models/
-    mlTau_0612_multipartau_full_b8483f6/
-      model.onnx
-      metadata.json
+mlTau_0612_multipartau_full_b8483f6.tar.gz
+```
+
+Unpack it under `models/`:
+
+```bash
+mkdir -p models
+tar -xzf <PATH_TO_DOWNLOAD>/mlTau_0612_multipartau_full_b8483f6.tar.gz -C models
+```
+
+After unpacking, the model bundle should look like:
+
+```text
+models/
+  mlTau_0612_multipartau_full_b8483f6/
+    model.onnx
+    metadata.json
+```
+
+The release also provides a `.sha256` checksum file. This is optional, but can
+be used to verify the downloaded archive:
+
+```bash
+sha256sum -c mlTau_0612_multipartau_full_b8483f6.tar.gz.sha256
 ```
 
 Build the Gaudi package:
@@ -53,7 +70,14 @@ source setup.sh
 Run the reconstruction:
 
 ```bash
-MLTAU_INPUT=<INPUT_EDM4HEP_ROOT> MLTAU_OUTPUT=<OUTPUT_EDM4HEP_ROOT> MLTAU_MODEL=<MODEL_BUNDLE>/model.onnx MLTAU_METADATA=<MODEL_BUNDLE>/metadata.json MLTAU_INPUT_PARTICLES=PandoraPFOs k4run options/mlTau.py
+MODEL_BUNDLE=$PWD/models/mlTau_0612_multipartau_full_b8483f6
+
+MLTAU_INPUT=<INPUT_EDM4HEP_ROOT> \
+MLTAU_OUTPUT=<OUTPUT_EDM4HEP_ROOT> \
+MLTAU_MODEL=$MODEL_BUNDLE/model.onnx \
+MLTAU_METADATA=$MODEL_BUNDLE/metadata.json \
+MLTAU_INPUT_PARTICLES=PandoraPFOs \
+k4run options/mlTau.py
 ```
 
 Inspect the output collections:
