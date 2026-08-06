@@ -57,15 +57,18 @@ be used to verify the downloaded archive:
 sha256sum -c mlTau_0612_multipartau_full_b8483f6.tar.gz.sha256
 ```
 
-Build the Gaudi package:
+Build the Gaudi package. On Manivald, this is the tested Key4hep setup:
 
 ```bash
-source /cvmfs/sw.hsf.org/key4hep/setup.sh -r <KEY4HEP_RELEASE>
+source /cvmfs/sw.hsf.org/key4hep/setup.sh -r 2026-04-08
 
 cmake -B build-gcc14 -S . -DCMAKE_INSTALL_PREFIX=install
 cmake --build build-gcc14 --target install -j4
 source setup.sh
 ```
+
+On another machine, use a Key4hep release that provides Gaudi, k4FWCore,
+EDM4hep, podio, FastJet, ONNXRuntime, ROOT, and a C++20-capable compiler.
 
 Run the reconstruction:
 

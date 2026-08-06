@@ -90,6 +90,31 @@ target_include_directories(mlTauPlugins
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+set(MLTAU_RUNTIME_LIBRARY_DIRS "")
+foreach(_mltau_runtime_target IN ITEMS ${MLTAU_FASTJET_TARGET} ${MLTAU_ONNXRUNTIME_TARGET})
+  foreach(_mltau_runtime_prop IN ITEMS
+      IMPORTED_LOCATION
+      IMPORTED_LOCATION_RELEASE
+      IMPORTED_LOCATION_RELWITHDEBINFO
+      IMPORTED_LOCATION_MINSIZEREL
+      IMPORTED_LOCATION_DEBUG)
+    get_target_property(_mltau_runtime_lib ${_mltau_runtime_target} ${_mltau_runtime_prop})
+    if(_mltau_runtime_lib AND NOT _mltau_runtime_lib STREQUAL "_mltau_runtime_lib-NOTFOUND")
+      get_filename_component(_mltau_runtime_dir "${_mltau_runtime_lib}" DIRECTORY)
+      list(APPEND MLTAU_RUNTIME_LIBRARY_DIRS "${_mltau_runtime_dir}")
+      break()
+    endif()
+  endforeach()
+endforeach()
+list(REMOVE_DUPLICATES MLTAU_RUNTIME_LIBRARY_DIRS)
+string(REPLACE ";" ":" MLTAU_RUNTIME_LIBRARY_PATH "${MLTAU_RUNTIME_LIBRARY_DIRS}")
+
+configure_file(
+  ${CMAKE_CURRENT_SOURCE_DIR}/cmake/setup.sh.in
+  ${CMAKE_CURRENT_SOURCE_DIR}/setup.sh
+  @ONLY
+)
+
 install(DIRECTORY options DESTINATION ${CMAKE_INSTALL_DATADIR}/mlTau)
-install(DIRECTORY doc DESTINATION ${CMAKE_INSTALL_DATADIR}/mlTau)
-install(PROGRAMS setup.sh DESTINATION .)
+install(FILES README.md DESTINATION ${CMAKE_INSTALL_DATADIR}/mlTau)
+install(PROGRAMS ${CMAKE_CURRENT_SOURCE_DIR}/setup.sh DESTINATION .)

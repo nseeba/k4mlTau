@@ -1,0 +1,17 @@
+# Source this after building and installing k4mlTau.
+# It makes the locally installed Gaudi plugin and configurables visible.
+
+_k4mltau_dir="@CMAKE_CURRENT_SOURCE_DIR@"
+_k4mltau_runtime_libs="@MLTAU_RUNTIME_LIBRARY_PATH@"
+
+if [ -n "${_k4mltau_runtime_libs}" ]; then
+  export LD_LIBRARY_PATH="${_k4mltau_runtime_libs}:${LD_LIBRARY_PATH}"
+fi
+
+export LD_LIBRARY_PATH="${_k4mltau_dir}/install/@CMAKE_INSTALL_LIBDIR@:${LD_LIBRARY_PATH}"
+export GAUDI_PLUGIN_PATH="${_k4mltau_dir}/install/@CMAKE_INSTALL_LIBDIR@:${GAUDI_PLUGIN_PATH}"
+export PYTHONPATH="${_k4mltau_dir}/install/python:${PYTHONPATH}"
+export CMAKE_PREFIX_PATH="${_k4mltau_dir}/install:${CMAKE_PREFIX_PATH}"
+
+unset _k4mltau_dir
+unset _k4mltau_runtime_libs

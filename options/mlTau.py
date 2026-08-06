@@ -3,8 +3,8 @@ import os
 from Gaudi.Configuration import DEBUG, INFO
 
 from Configurables import ApplicationMgr, PodioInput, PodioOutput, k4DataSvc
-from mlTau.mlTauPluginsConf import mlTau__mlTauAlg as mlTauAlg
-from mlTau.mlTauPluginsConf import mlTau__mlTauSeedBuilder as mlTauSeedBuilder
+from k4mlTau.mlTauPluginsConf import mlTau__mlTauAlg as mlTauAlg
+from k4mlTau.mlTauPluginsConf import mlTau__mlTauSeedBuilder as mlTauSeedBuilder
 
 
 def required_env(name):
