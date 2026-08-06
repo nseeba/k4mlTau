@@ -22,3 +22,6 @@ setup.sh
 release-artifacts/
 *.tar.gz
 *.sha256
+
+# Downloaded model bundles
+models/
