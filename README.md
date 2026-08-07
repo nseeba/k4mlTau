@@ -6,7 +6,7 @@ model and writing reconstructed tau objects to EDM4hep ROOT files.
 The default reconstruction chain is:
 
 ```text
-PandoraPFOs -> mlTauSeedBuilder -> mlTau -> mlTau + mlTauID
+PandoraPFOs -> mlTauSeedBuilder -> mlTau -> mlTau (particles) + mlTauID (scores)
 ```
 
 `mlTauSeedBuilder` clusters input reconstructed particles into tau seed jets.
