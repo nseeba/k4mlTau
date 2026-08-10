@@ -25,3 +25,8 @@ release-artifacts/
 
 # Downloaded model bundles
 models/
+
+# Local batch/output staging
+outputs/
+logs/
+slurm-*.out

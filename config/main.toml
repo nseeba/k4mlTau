@@ -1,0 +1,23 @@
+# k4mlTau processing config.
+# workflow can be "local" or "slurm".
+
+workflow = "local"
+input_dir = "/local/joosep/mlpf/cld/v1.2.5_key4hep_2025-05-29/gen/p8_ee_Z_tautau_ecm91/root"
+output_dir = "outputs"
+model_bundle = "models/mlTau_0612_multipartau_full_b8483f6"
+
+# Use -1 for all input ROOT files.
+max_files = 100
+files_per_output = 20
+
+input_particles = "PandoraPFOs"
+key4hep_release = "2026-04-08"
+
+[slurm]
+job_name = "mltau"
+# Optional examples. Leave unset if your cluster defaults are fine.
+# partition = "short"
+# time = "02:00:00"
+# mem = "4G"
+# cpus_per_task = 1
+# extra_args = ["--account=my_account"]
