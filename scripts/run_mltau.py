@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run k4mlTau locally or with Slurm using one config file."""
+"""Run k4mlTau locally, with Slurm or with HTCondor using one config file."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import argparse
 import os
 import shlex
 import subprocess
+import time
 from pathlib import Path
 
 
@@ -52,7 +53,7 @@ def load_config(path: str) -> dict:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", default="config/main.toml", help="k4mlTau config file")
-    parser.add_argument("--workflow", choices=("local", "slurm"), help="Override workflow in config")
+    parser.add_argument("--workflow", choices=("local", "slurm", "condor"), help="Override workflow in config")
     parser.add_argument("--input-dir", help="Override input_dir in config")
     parser.add_argument("--output-dir", help="Override output_dir in config")
     parser.add_argument("--max-files", type=int, help="Override max_files in config; -1 means all")
@@ -70,6 +71,8 @@ def repo_path(value: str | os.PathLike[str]) -> Path:
 
 
 def selected_files(config: dict) -> list[Path]:
+    if not config.get("input_dir") or str(config["input_dir"]).startswith("/path/to"):
+        raise SystemExit("No input directory given: use --input-dir /path/to/edm4hep/root/files")
     input_dir = Path(config["input_dir"])
     files = sorted(input_dir.glob("*.root"))
     max_files = int(config.get("max_files", -1))
@@ -180,11 +183,69 @@ def submit_slurm(config_path: str, config: dict, n_chunks: int, dry_run: bool) -
     subprocess.run(command, check=True)
 
 
+def worker_arguments(config_path: str, config: dict) -> list[str]:
+    """Arguments for one batch worker; the chunk index is appended by the batch system."""
+    return [
+        str(REPO_DIR / "scripts/run_mltau.py"),
+        "--config",
+        str(Path(config_path).resolve()),
+        "--input-dir",
+        str(config["input_dir"]),
+        "--output-dir",
+        str(repo_path(config["output_dir"])),
+        "--max-files",
+        str(config.get("max_files", -1)),
+        "--files-per-output",
+        str(config["files_per_output"]),
+        "--model-bundle",
+        str(repo_path(config["model_bundle"])),
+        "--worker",
+    ]
+
+
+def submit_condor(config_path: str, config: dict, n_chunks: int, dry_run: bool) -> None:
+    condor = config.get("condor", {})
+    job_name = condor.get("job_name", "mltau")
+    # HTCondor log files cannot live on EOS, so by default they go next to the code (AFS on lxplus).
+    log_dir = repo_path(condor.get("log_dir", "condor_logs"))
+    log_dir.mkdir(parents=True, exist_ok=True)
+    repo_path(config["output_dir"]).mkdir(parents=True, exist_ok=True)
+
+    # Run the worker through the node's python3; each job sets up Key4hep itself (see gaudi_command).
+    arguments = " ".join(
+        f"'{part}'" if " " in part else part
+        for part in ["python3", *worker_arguments(config_path, config), "--chunk-index", "$(ProcId)"]
+    )
+    lines = [
+        "executable          = /usr/bin/env",
+        f'arguments           = "{arguments}"',
+        f'environment         = "K4MLTAU_REPO_DIR={REPO_DIR}"',
+        "getenv              = False",
+        f"output              = {log_dir}/{job_name}.$(ClusterId).$(ProcId).out",
+        f"error               = {log_dir}/{job_name}.$(ClusterId).$(ProcId).err",
+        f"log                 = {log_dir}/{job_name}.$(ClusterId).log",
+        f"request_cpus        = {condor.get('request_cpus', 1)}",
+        f'+JobFlavour         = "{condor.get("job_flavour", "espresso")}"',
+    ]
+    if "request_memory" in condor:
+        lines.append(f"request_memory      = {condor['request_memory']}")
+    lines.extend(condor.get("extra_lines", []))
+    lines.append(f"queue {n_chunks}")
+
+    submit_file = log_dir / f"{job_name}_{time.strftime('%Y%m%d_%H%M%S')}.sub"
+    submit_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    print(f"submitting {n_chunks} HTCondor jobs (submit file: {submit_file}, logs: {log_dir})")
+    print(submit_file.read_text(encoding="utf-8"), end="")
+    if dry_run:
+        return
+    subprocess.run(["condor_submit", str(submit_file)], check=True)
+
+
 def worker_index(args: argparse.Namespace) -> int:
     if args.chunk_index is not None:
         return args.chunk_index
     if "SLURM_ARRAY_TASK_ID" not in os.environ:
-        raise SystemExit("Worker mode requires SLURM_ARRAY_TASK_ID or --chunk-index")
+        raise SystemExit("Worker mode requires SLURM_ARRAY_TASK_ID or --chunk-index (HTCondor passes $(ProcId))")
     return int(os.environ["SLURM_ARRAY_TASK_ID"])
 
 
@@ -220,6 +281,8 @@ def main() -> int:
         run_local(config, all_chunks, args.dry_run)
     elif workflow == "slurm":
         submit_slurm(str(config_path), config, len(all_chunks), args.dry_run)
+    elif workflow == "condor":
+        submit_condor(str(config_path), config, len(all_chunks), args.dry_run)
     else:
         raise SystemExit(f"Unknown workflow: {workflow}")
     return 0

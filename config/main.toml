@@ -1,13 +1,17 @@
-# k4mlTau processing config.
-# workflow can be "local" or "slurm".
+# k4mlTau default settings (shared by all users).
+# Paths are given on the command line, e.g.
+#     python3 scripts/run_mltau.py --workflow condor --input-dir <dir> --output-dir <dir>
+# Any value here can be overridden with the corresponding --option.
+#
+# workflow can be "local", "slurm" (e.g. Manivald) or "condor" (e.g. lxplus HTCondor).
 
 workflow = "local"
-input_dir = "/local/joosep/mlpf/cld/v1.2.5_key4hep_2025-05-29/gen/p8_ee_Z_tautau_ecm91/root"
+input_dir = "/path/to/edm4hep/root/files"
 output_dir = "outputs"
 model_bundle = "models/mlTau_0612_multipartau_full_b8483f6"
 
 # Use -1 for all input ROOT files.
-max_files = 100
+max_files = -1
 files_per_output = 20
 
 input_particles = "PandoraPFOs"
@@ -21,3 +25,12 @@ job_name = "mltau"
 # mem = "4G"
 # cpus_per_task = 1
 # extra_args = ["--account=my_account"]
+
+[condor]
+job_name = "mltau"
+job_flavour = "espresso"   # lxplus: espresso 20 min, microcentury 1 h, longlunch 2 h, workday 8 h
+# Optional. HTCondor logs must not be on EOS; default is condor_logs/ in the repository.
+# log_dir = "condor_logs"
+# request_cpus = 1
+# request_memory = "2 GB"
+# extra_lines = ["+AccountingGroup = \"group_u_XXX\""]

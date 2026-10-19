@@ -1,47 +1,58 @@
 # k4mlTau
 
-`k4mlTau` is a Key4hep/FCCSW Gaudi package for running an exported ParTau ONNX
-model and writing reconstructed tau objects to EDM4hep ROOT files.
+`k4mlTau` is a Key4hep/FCCSW Gaudi package that runs the ML-τ MultiParTau model
+(exported to ONNX) on EDM4hep reconstruction output and writes reconstructed
+hadronic tau (τh) candidates – visible 4-momentum, charge, τh ID score and decay
+mode – to EDM4hep ROOT files.
 
-The default reconstruction chain is:
+The reconstruction chain is:
 
 ```text
 PandoraPFOs -> mlTauSeedBuilder -> mlTau -> mlTau (particles) + mlTauID (scores)
 ```
 
-`mlTauSeedBuilder` clusters input reconstructed particles into tau seed jets.
-`mlTau` builds the ParTau input tensors, applies optional input scaling from the
-model metadata, runs ONNXRuntime, and writes tau candidates plus ID information.
+`mlTauSeedBuilder` clusters the reconstructed particles into seed jets (FastJet
+ee_genkt, anti-kt, R = 0.4 – the same jets as used in training). `mlTau` builds
+the model inputs, runs ONNX Runtime and writes the tau candidates plus their ID
+information. Everything runs on CPU.
 
-## Quick Start
+Input files must contain the collections `PandoraPFOs`, `SiTracks_Refitted` and
+`PrimaryVertices` (standard CLD reconstruction).
 
-Clone the repository:
+## Setup
+
+### 1. Clone the repository
 
 ```bash
 git clone git@github.com:nseeba/k4mlTau.git
 cd k4mlTau
 ```
 
-Download the model bundle from the repository releases:
+### 2. Download and unpack the model
 
-```text
-https://github.com/nseeba/k4mlTau/releases/tag/v0.1.0
-```
-
-Use the asset:
+Download both assets of the release
+[v0.1.0](https://github.com/nseeba/k4mlTau/releases/tag/v0.1.0), e.g. with your
+web browser:
 
 ```text
 mlTau_0612_multipartau_full_b8483f6.tar.gz
+mlTau_0612_multipartau_full_b8483f6.tar.gz.sha256
 ```
 
-Unpack it under `models/`:
+Move them into the `models/` directory of the repository and unpack them there
+(replace `~/Downloads` with wherever the files are; on a remote machine copy them
+there first, see [Running on lxplus](#running-on-lxplus-htcondor)):
 
 ```bash
 mkdir -p models
-tar -xzf <PATH_TO_DOWNLOAD>/mlTau_0612_multipartau_full_b8483f6.tar.gz -C models
+mv ~/Downloads/mlTau_0612_multipartau_full_b8483f6.tar.gz* models/
+cd models
+sha256sum -c mlTau_0612_multipartau_full_b8483f6.tar.gz.sha256   # optional, prints "OK"
+tar -xzf mlTau_0612_multipartau_full_b8483f6.tar.gz
+cd ..
 ```
 
-After unpacking, the model bundle should look like:
+Result:
 
 ```text
 models/
@@ -50,50 +61,61 @@ models/
     metadata.json
 ```
 
-The release also provides a `.sha256` checksum file. This is optional, but can
-be used to verify the downloaded archive:
-
-```bash
-sha256sum -c mlTau_0612_multipartau_full_b8483f6.tar.gz.sha256
-```
-
-Build the Gaudi package. On Manivald, this is the tested Key4hep setup:
+### 3. Build
 
 ```bash
 source /cvmfs/sw.hsf.org/key4hep/setup.sh -r 2026-04-08
-
-cmake -B build-gcc14 -S . -DCMAKE_INSTALL_PREFIX=install
-cmake --build build-gcc14 --target install -j4
+cmake -B build -S . -DCMAKE_INSTALL_PREFIX=install
+cmake --build build --target install -j4
 source setup.sh
 ```
 
-On another machine, use a Key4hep release that provides Gaudi, k4FWCore,
-EDM4hep, podio, FastJet, ONNXRuntime, ROOT, and a C++20-capable compiler.
+The release `2026-04-08` is tested on Manivald and lxplus. Any Key4hep release
+with Gaudi, k4FWCore, EDM4hep, podio, FastJet, ONNX Runtime, ROOT and a C++20
+compiler should work.
 
-Run the default config locally:
+**In every new shell**, set up the environment again before running:
 
 ```bash
-python3 scripts/run_mltau.py
+cd k4mlTau
+source /cvmfs/sw.hsf.org/key4hep/setup.sh -r 2026-04-08
+source setup.sh
 ```
 
-By default, the runner reads `config/main.toml`. The main fields are:
+## Running
 
-```toml
-workflow = "local"      # "local" or "slurm"
-input_dir = "/path/to/edm4hep/root/files"
-output_dir = "outputs"
-model_bundle = "models/mlTau_0612_multipartau_full_b8483f6"
-max_files = 100         # -1 means all files
-files_per_output = 20   # 20 input files -> one output ROOT file
-input_particles = "PandoraPFOs"
-key4hep_release = "2026-04-08"
+Process all EDM4hep files in a directory (here one output file per input file):
 
-[slurm]
-job_name = "mltau"
+```bash
+python3 scripts/run_mltau.py \
+  --input-dir /path/to/edm4hep/root/files \
+  --output-dir /path/to/output \
+  --files-per-output 1
 ```
 
-The runner sorts the selected `.root` files, splits them in memory, and writes
-one output file per chunk:
+The same command runs on a batch system by adding `--workflow`:
+
+```bash
+# Slurm (e.g. Manivald)
+python3 scripts/run_mltau.py --workflow slurm  --input-dir <dir> --output-dir <dir>
+
+# HTCondor (e.g. lxplus)
+python3 scripts/run_mltau.py --workflow condor --input-dir <dir> --output-dir <dir>
+```
+
+Add `--dry-run` to only print what would be run or submitted.
+
+| Option | Meaning | Default |
+| --- | --- | --- |
+| `--input-dir` | directory with the input EDM4hep `.root` files | required |
+| `--output-dir` | where the output `mltau_XXXXXX.root` files are written | `outputs` |
+| `--workflow` | `local`, `slurm` or `condor` | `local` |
+| `--files-per-output` | input files per output file (= per batch job) | `20` |
+| `--max-files` | use only the first N input files (sorted), `-1` = all | `-1` |
+| `--model-bundle` | model directory with `model.onnx` + `metadata.json` | the bundle in `models/` |
+
+The input files are sorted and split into chunks; each chunk gives one output
+file and, on a batch system, one job:
 
 ```text
 <output_dir>/mltau_000000.root
@@ -101,25 +123,81 @@ one output file per chunk:
 ...
 ```
 
-Common config fields can be overridden on the command line:
+One input file of 100 events takes from a few seconds up to ~30 s. Shared
+defaults (model bundle, Key4hep release, Slurm/HTCondor job settings) are in
+`config/main.toml`; normally there is no need to edit it.
+
+Monitor batch jobs with `squeue -u $USER` (Slurm) or `condor_q` (HTCondor).
+Slurm logs go to `<output_dir>/logs/`, HTCondor logs to `condor_logs/` in the
+repository.
+
+## Running on lxplus (HTCondor)
+
+The steps are the same as above; these points are specific to lxplus.
+
+**Where to put things**
+
+- Code, build and model: **AFS** (your home `/afs/cern.ch/user/<x>/<user>/` or
+  work area `/afs/cern.ch/work/<x>/<user>/`). k4mlTau needs only ~30 MB.
+- Input and output ROOT files: **EOS** (`/eos/user/<x>/<user>/...`).
+- HTCondor job logs cannot be on EOS. The runner therefore writes them, together
+  with the generated submit file, to `condor_logs/` inside the repository (on
+  AFS). Another location can be set with `log_dir` in the `[condor]` section of
+  `config/main.toml`.
+
+**Getting the model and input files onto lxplus**
+
+The release is private, so download the model in your browser on your own
+computer and copy it to lxplus:
 
 ```bash
-python3 scripts/run_mltau.py \
-  --workflow local \
-  --input-dir /path/to/root/files \
-  --output-dir outputs/test \
-  --max-files 100 \
-  --files-per-output 20
+# on lxplus, once: create the target folder
+mkdir -p ~/k4mlTau/models
+
+# on your own computer
+scp ~/Downloads/mlTau_0612_multipartau_full_b8483f6.tar.gz* \
+    <user>@lxplus.cern.ch:~/k4mlTau/models/
 ```
 
-Submit the same workflow to Slurm:
+Then unpack it on lxplus as in [step 2](#2-download-and-unpack-the-model)
+(starting from `cd models`). Input files can be copied to EOS the same way, e.g.
+`scp *.root <user>@lxplus.cern.ch:/eos/user/<x>/<user>/inputs/`.
+
+**Submitting**
 
 ```bash
-python3 scripts/run_mltau.py --workflow slurm --dry-run
-python3 scripts/run_mltau.py --workflow slurm
+python3 scripts/run_mltau.py --workflow condor \
+  --input-dir /eos/user/<x>/<user>/inputs \
+  --output-dir /eos/user/<x>/<user>/outputs \
+  --files-per-output 10
+condor_q
 ```
 
-For a direct one-output Gaudi job, bypass the runner and call `k4run` directly:
+Each job must finish within the time limit of its job flavour, set by
+`job_flavour` in `config/main.toml`: `espresso` (20 min, default),
+`microcentury` (1 h), `longlunch` (2 h), `workday` (8 h). With ~30 s per input
+file, `--files-per-output 10` fits comfortably into `espresso`. If a job fails,
+look at `condor_logs/mltau.<cluster>.<job>.err`.
+
+**Troubleshooting**
+
+- `Could not chdir to home directory ... Connection timed out` or
+  `no tokens?` after login: get Kerberos/AFS tokens with
+  `kinit <user>@CERN.CH` and `aklog`, then `cd ~`.
+- Messages that `PodioInput`/`PodioOutput` are deprecated are harmless.
+
+## Checking the output
+
+```bash
+podio-dump <output_dir>/mltau_000000.root | grep -E "mlTau|mlTauID|mlTauSeedJets"
+```
+
+shows the three new collections (`mlTau`, `mlTauID`, `mlTauSeedJets`); see
+[Output Schema](#output-schema) for their content.
+
+## Running a single file with k4run
+
+Without the runner, one input file can be processed directly:
 
 ```bash
 MODEL_BUNDLE=$PWD/models/mlTau_0612_multipartau_full_b8483f6
@@ -132,17 +210,10 @@ MLTAU_INPUT_PARTICLES=PandoraPFOs \
 k4run options/mlTau.py
 ```
 
-Inspect the output collections:
-
-```bash
-podio-dump <OUTPUT_EDM4HEP_ROOT> | grep -E "mlTau|mlTauID|mlTauSeedJets"
-rootls -t <OUTPUT_EDM4HEP_ROOT> | grep -E "mlTau|mlTauID|mlTauSeedJets"
-```
-
 ## Configuration
 
-Normal production running is controlled by `config/main.toml` and
-`scripts/run_mltau.py`. The lower-level Gaudi options file also accepts
+Normal running is controlled by the command-line options of `scripts/run_mltau.py`
+and the shared defaults in `config/main.toml`. The lower-level Gaudi options file also accepts
 environment variables such as `MLTAU_INPUT`, `MLTAU_OUTPUT`, `MLTAU_MODEL`, and
 `MLTAU_METADATA`; this is mainly useful for debugging or custom workflows.
 
