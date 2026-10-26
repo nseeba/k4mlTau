@@ -22,26 +22,18 @@ The input files must contain `PandoraPFOs`, `SiTracks_Refitted` and
 **Clone the repository**
 
 ```bash
-git clone git@github.com:nseeba/k4mlTau.git
+git clone https://github.com/nseeba/k4mlTau.git
 cd k4mlTau
 ```
 
-**Get the model.** Download these two files from the release
-[v0.1.0](https://github.com/nseeba/k4mlTau/releases/tag/v0.1.0) in your web
-browser:
-
-```text
-mlTau_0612_multipartau_full_b8483f6.tar.gz
-mlTau_0612_multipartau_full_b8483f6.tar.gz.sha256
-```
-
-Then move them into `models/` and unpack them (change `~/Downloads` if your
-browser saves files elsewhere):
+**Download the model** (from the release
+[v0.1.0](https://github.com/nseeba/k4mlTau/releases/tag/v0.1.0)) into `models/`:
 
 ```bash
 mkdir -p models
-mv ~/Downloads/mlTau_0612_multipartau_full_b8483f6.tar.gz* models/
 cd models
+wget https://github.com/nseeba/k4mlTau/releases/download/v0.1.0/mlTau_0612_multipartau_full_b8483f6.tar.gz
+wget https://github.com/nseeba/k4mlTau/releases/download/v0.1.0/mlTau_0612_multipartau_full_b8483f6.tar.gz.sha256
 sha256sum -c mlTau_0612_multipartau_full_b8483f6.tar.gz.sha256   # should print "OK"
 tar -xzf mlTau_0612_multipartau_full_b8483f6.tar.gz
 cd ..
@@ -76,7 +68,9 @@ python3 scripts/run_mltau.py \
 
 This writes `mltau_000000.root`, `mltau_000001.root`, … to the output directory
 (by default one output file per 20 input files; change it with
-`--files-per-output`). One input file of 100 events takes up to ~30 s.
+`--files-per-output`). One input file of 100 events takes up to ~30 s. The
+output files contain the full input events, so they are about as large as the
+input files together.
 
 **On a batch system**, add `--workflow`. Each output file becomes one job:
 
@@ -97,22 +91,10 @@ podio-dump /path/to/output/mltau_000000.root | grep mlTau
 
 ## 3. Running on lxplus
 
-The commands are the same. Two things are specific to lxplus:
-
-1. **Code and model on AFS, ROOT files on EOS.** Clone and build in your AFS
-   home or work area; put input and output files on EOS
-   (`/eos/user/<x>/<user>/...`). HTCondor logs go to `condor_logs/` in the
-   repository, because they cannot be written to EOS.
-2. **Copy the model from your own computer**, since the release is private:
-
-   ```bash
-   # on lxplus
-   mkdir -p ~/k4mlTau/models
-   # on your own computer
-   scp ~/Downloads/mlTau_0612_multipartau_full_b8483f6.tar.gz* <user>@lxplus.cern.ch:~/k4mlTau/models/
-   ```
-
-   Then unpack it on lxplus as above (starting from `cd models`).
+The commands are the same. Put the code, the build and the model on **AFS**
+(your home or work area) and the input and output ROOT files on **EOS**
+(`/eos/user/<x>/<user>/...`). HTCondor logs go to `condor_logs/` in the
+repository, because they cannot be written to EOS.
 
 Example:
 
@@ -124,8 +106,9 @@ python3 scripts/run_mltau.py --workflow condor \
 
 ## 4. Output
 
-The output file contains the input collections plus three new ones, with one
-entry per seed jet in the same order:
+Each output file contains the complete input events (all collections, e.g.
+`MCParticles` and `RecoMCTruthLink`) plus three new collections. The new
+collections have one entry per seed jet, in the same order:
 
 | Collection | Content |
 | --- | --- |

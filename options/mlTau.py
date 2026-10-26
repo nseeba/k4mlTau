@@ -1,9 +1,10 @@
 import os
 from pathlib import Path
 
-from Gaudi.Configuration import DEBUG, INFO, WARNING
+from Gaudi.Configuration import DEBUG, INFO
 
-from Configurables import ApplicationMgr, PodioInput, PodioOutput, k4DataSvc
+from Configurables import EventDataSvc
+from k4FWCore import ApplicationMgr, IOSvc
 from k4mlTau.mlTauPluginsConf import mlTau__mlTauAlg as mlTauAlg
 from k4mlTau.mlTauPluginsConf import mlTau__mlTauSeedBuilder as mlTauSeedBuilder
 
@@ -82,24 +83,16 @@ seed_genkt_power = float(os.environ.get("MLTAU_SEED_GENKT_POWER", "-1.0"))
 seed_min_pt = float(os.environ.get("MLTAU_SEED_MIN_PT", "0.0"))
 output_level_name = os.environ.get("MLTAU_OUTPUT_LEVEL", "INFO").upper()
 output_level = DEBUG if output_level_name == "DEBUG" else INFO
-input_collections = [
-    item.strip()
-    for item in os.environ.get(
-        "MLTAU_INPUT_COLLECTIONS",
-        f"{input_particles},{input_tracks},{input_primary_vertices}",
-    ).split(",")
-    if item.strip()
-]
+# Collections to read; empty (default) = all collections of the input files, which are all
+# written to the output together with the new mlTau collections.
+input_collections = split_csv(os.environ.get("MLTAU_INPUT_COLLECTIONS", ""))
 
-podio_event = k4DataSvc("EventDataSvc")
-if len(input_files) == 1:
-    podio_event.input = input_files[0]
-else:
-    podio_event.inputs = input_files
-
-podio_input = PodioInput("PodioInput")
-podio_input.OutputLevel = WARNING
-podio_input.collections = input_collections
+iosvc = IOSvc("IOSvc")
+iosvc.Input = input_files
+iosvc.Output = output_file
+iosvc.outputCommands = ["keep *"]
+if input_collections:
+    iosvc.CollectionNames = input_collections
 
 seed_builder = mlTauSeedBuilder("mlTauSeedBuilder")
 seed_builder.OutputLevel = output_level
@@ -128,16 +121,9 @@ mltau.UseLifetimeVariables = os.environ.get("MLTAU_USE_LIFETIME", "1") not in (
 )
 mltau.InputDumpPath = os.environ.get("MLTAU_INPUT_DUMP", "")
 
-podio_output = PodioOutput("PodioOutput")
-podio_output.OutputLevel = WARNING
-podio_output.filename = output_file
-podio_output.outputCommands = [
-    "keep *",
-]
-
 ApplicationMgr(
-    TopAlg=[podio_input, seed_builder, mltau, podio_output],
-    ExtSvc=[podio_event],
+    TopAlg=[seed_builder, mltau],
+    ExtSvc=[EventDataSvc("EventDataSvc")],
     EvtSel="NONE",
     EvtMax=-1,
     OutputLevel=INFO,

@@ -5,9 +5,11 @@ installing and running, see the [README](../README.md).
 
 ## Output collections
 
-The output file contains all input collections plus three new ones. They have
-one entry per seed jet, in the same order (as long as no positive
-`MLTAU_TAU_SCORE_CUT` is set).
+The output file contains the complete input events (all collections of the input
+files) plus three new collections. The new collections have one entry per seed
+jet, in the same order (as long as no positive `MLTAU_TAU_SCORE_CUT` is set).
+Collections written with an older EDM4hep version are converted to the version of
+the Key4hep release (podio schema evolution), as in any Key4hep job.
 
 **`mlTauSeedJets`** (`edm4hep::ReconstructedParticleCollection`): the seed jets
 (FastJet ee_genkt, anti-kt, R = 0.4, on `PandoraPFOs`).
@@ -89,9 +91,10 @@ Further environment variables of `options/mlTau.py`:
 | `MLTAU_INPUT_PARTICLES` | input particle collection | `PandoraPFOs` |
 | `MLTAU_INPUT_TRACKS` | tracks for the impact-parameter features | `SiTracks_Refitted` |
 | `MLTAU_INPUT_PRIMARY_VERTICES` | primary vertices for the impact-parameter features | `PrimaryVertices` |
-| `MLTAU_TAU_SCORE_CUT` | write only candidates with a score above this value | `0.0` |
+| `MLTAU_TAU_SCORE_CUT` | write only candidates with a score of at least this value | `0.0` |
 | `MLTAU_VETO_LEPTON_JETS` | `1` or `0`, see above | `1` |
 | `MLTAU_OUTPUT_LEVEL` | `INFO` or `DEBUG` | `INFO` |
+| `MLTAU_INPUT_COLLECTIONS` | comma-separated list of input collections to read and write; must include the three inputs above | unset = all |
 | `MLTAU_INPUT_DUMP` | write the ONNX input tensors to a JSONL file (debugging) | unset |
 
 ## Model interface
@@ -137,4 +140,7 @@ products and build again:
 
 ```bash
 rm -rf build install setup.sh
+cmake -B build -S . -DCMAKE_INSTALL_PREFIX=install
+cmake --build build --target install -j4
+source setup.sh
 ```
