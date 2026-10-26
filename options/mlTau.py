@@ -119,6 +119,8 @@ mltau.InputPrimaryVertices = input_primary_vertices
 mltau.OutputTaus = output_taus
 mltau.OutputTauID = output_tau_id
 mltau.TauScoreCut = tau_score_cut
+# Seed jets with an electron or muon constituent are not evaluated (as in the training selection)
+mltau.VetoLeptonJets = os.environ.get("MLTAU_VETO_LEPTON_JETS", "1") not in ("0", "false", "False")
 mltau.UseLifetimeVariables = os.environ.get("MLTAU_USE_LIFETIME", "1") not in (
     "0",
     "false",

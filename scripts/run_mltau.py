@@ -59,6 +59,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-files", type=int, help="Override max_files in config; -1 means all")
     parser.add_argument("--files-per-output", type=int, help="Override files_per_output in config")
     parser.add_argument("--model-bundle", help="Override model_bundle in config")
+    parser.add_argument(
+        "--no-lepton-veto",
+        action="store_true",
+        help="Evaluate the model also on seed jets with an electron/muon constituent "
+        "(by default they are written with score -1, as in the training selection)",
+    )
     parser.add_argument("--dry-run", action="store_true", help="Print commands without running/submitting")
     parser.add_argument("--worker", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--chunk-index", type=int, help=argparse.SUPPRESS)
@@ -98,6 +104,7 @@ def gaudi_command(config: dict, chunk: list[Path], output_path: Path) -> str:
     model_bundle = repo_path(config["model_bundle"])
     key4hep_release = config.get("key4hep_release", "2026-04-08")
     input_particles = config.get("input_particles", "PandoraPFOs")
+    veto_lepton_jets = "1" if config.get("veto_lepton_jets", True) else "0"
     input_value = ",".join(str(path) for path in chunk)
     env = {
         "MLTAU_INPUT": input_value,
@@ -105,6 +112,7 @@ def gaudi_command(config: dict, chunk: list[Path], output_path: Path) -> str:
         "MLTAU_MODEL": str(model_bundle / "model.onnx"),
         "MLTAU_METADATA": str(model_bundle / "metadata.json"),
         "MLTAU_INPUT_PARTICLES": input_particles,
+        "MLTAU_VETO_LEPTON_JETS": veto_lepton_jets,
     }
     exports = " ".join(f"{key}={shlex.quote(value)}" for key, value in env.items())
     return (
@@ -173,6 +181,7 @@ def submit_slurm(config_path: str, config: dict, n_chunks: int, dry_run: bool) -
             str(config["files_per_output"]),
             "--model-bundle",
             str(config["model_bundle"]),
+            *([] if config.get("veto_lepton_jets", True) else ["--no-lepton-veto"]),
             "--worker",
         ]
     )
@@ -199,6 +208,7 @@ def worker_arguments(config_path: str, config: dict) -> list[str]:
         str(config["files_per_output"]),
         "--model-bundle",
         str(repo_path(config["model_bundle"])),
+        *([] if config.get("veto_lepton_jets", True) else ["--no-lepton-veto"]),
         "--worker",
     ]
 
@@ -261,6 +271,8 @@ def apply_overrides(config: dict, args: argparse.Namespace) -> None:
     for key, value in overrides.items():
         if value is not None:
             config[key] = value
+    if args.no_lepton_veto:
+        config["veto_lepton_jets"] = False
 
 
 def main() -> int:

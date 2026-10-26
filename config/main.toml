@@ -15,6 +15,9 @@ max_files = -1
 files_per_output = 20
 
 input_particles = "PandoraPFOs"
+# Seed jets containing an electron or muon are not evaluated by the model (they were removed
+# from the training sample); they are written with score -1. Set to false to evaluate all jets.
+veto_lepton_jets = true
 key4hep_release = "2026-04-08"
 
 [slurm]

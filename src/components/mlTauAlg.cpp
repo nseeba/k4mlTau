@@ -163,20 +163,47 @@ StatusCode mlTauAlg::execute(const EventContext& /*ctx*/) const {
     return StatusCode::SUCCESS;
   }
 
-  auto inputs = buildInputs(*jets, primaryVertices);
+  // Seed jets with an electron or muon constituent were removed from the training
+  // sample, so the model is not evaluated on them (VetoLeptonJets). Outputs are
+  // written in the original seed-jet order: mlTau[i] belongs to InputJets[i].
+  std::vector<edm4hep::ReconstructedParticle> evaluatedJets;
+  std::vector<float> leptonCharges(nJets, 0.0F);
+  std::vector<std::size_t> evaluatedIndex(nJets, 0);
+  evaluatedJets.reserve(nJets);
+  for (std::size_t jetIndex = 0; jetIndex < nJets; ++jetIndex) {
+    const auto jet = (*jets)[jetIndex];
+    if (m_vetoLeptonJets) {
+      leptonCharges[jetIndex] = leadingLeptonCharge(jet);
+    }
+    if (leptonCharges[jetIndex] == 0.0F) {
+      evaluatedIndex[jetIndex] = evaluatedJets.size();
+      evaluatedJets.push_back(jet);
+    }
+  }
+
+  auto inputs = buildInputs(evaluatedJets, primaryVertices);
   dumpInputs(inputs);
   applyInputScaling(inputs);
   const auto outputs = runInference(inputs);
-  fillOutputs(inputs, outputs, *tauParticles, *tauIds);
+
+  for (std::size_t jetIndex = 0; jetIndex < nJets; ++jetIndex) {
+    if (leptonCharges[jetIndex] != 0.0F) {
+      fillLeptonJet((*jets)[jetIndex], leptonCharges[jetIndex], *tauParticles, *tauIds);
+    } else {
+      fillTau(inputs, outputs, evaluatedIndex[jetIndex], *tauParticles, *tauIds);
+    }
+  }
   if (msgLevel(MSG::DEBUG)) {
     debug() << "Wrote " << tauParticles->size() << " mlTau and "
-            << tauIds->size() << " mlTauID entries" << endmsg;
+            << tauIds->size() << " mlTauID entries ("
+            << nJets - evaluatedJets.size() << " seed jets with a lepton not evaluated)"
+            << endmsg;
   }
   return StatusCode::SUCCESS;
 }
 
 mlTauAlg::ModelInputs
-mlTauAlg::buildInputs(const edm4hep::ReconstructedParticleCollection& jets,
+mlTauAlg::buildInputs(const std::vector<edm4hep::ReconstructedParticle>& jets,
                       const edm4hep::VertexCollection* primaryVertices) const {
   ModelInputs inputs;
   inputs.seedKinematics.reserve(jets.size());
@@ -475,10 +502,11 @@ std::vector<Ort::Value> mlTauAlg::runInference(const ModelInputs& inputs) const 
                         m_outputNames.size());
 }
 
-void mlTauAlg::fillOutputs(const ModelInputs& inputs,
-                           const std::vector<Ort::Value>& outputs,
-                           edm4hep::ReconstructedParticleCollection& tauParticles,
-                           edm4hep::ParticleIDCollection& tauIds) const {
+void mlTauAlg::fillTau(const ModelInputs& inputs,
+                       const std::vector<Ort::Value>& outputs,
+                       std::size_t jetIndex,
+                       edm4hep::ReconstructedParticleCollection& tauParticles,
+                       edm4hep::ParticleIDCollection& tauIds) const {
   if (inputs.seedKinematics.empty() || outputs.empty()) {
     return;
   }
@@ -488,10 +516,10 @@ void mlTauAlg::fillOutputs(const ModelInputs& inputs,
   const auto* decayModeLogits = outputs[2].GetTensorData<float>();
   const auto* kinematics = outputs[3].GetTensorData<float>();
 
-  for (std::size_t jetIndex = 0; jetIndex < inputs.seedKinematics.size(); ++jetIndex) {
+  {
     const auto tauScore = softmaxSignalScore(tauIdLogits + jetIndex * 2);
     if (tauScore < m_tauScoreCut) {
-      continue;
+      return;
     }
 
     const auto& seed = inputs.seedKinematics[jetIndex];
@@ -535,6 +563,59 @@ void mlTauAlg::fillOutputs(const ModelInputs& inputs,
       pid.addToParameters(dmProbabilities[dmIndex]);
     }
   }
+}
+
+void mlTauAlg::fillLeptonJet(const edm4hep::ReconstructedParticle& jet,
+                             float leptonCharge,
+                             edm4hep::ReconstructedParticleCollection& tauParticles,
+                             edm4hep::ParticleIDCollection& tauIds) const {
+  // Not evaluated (score -1): written only when no score cut is applied, so that the
+  // output stays one-to-one with the seed jets.
+  if (m_tauScoreCut > 0.0F) {
+    return;
+  }
+  const auto momentum = jet.getMomentum();
+  const auto energy = static_cast<float>(jet.getEnergy());
+  auto tau = tauParticles.create();
+  tau.setMomentum(momentum);
+  tau.setEnergy(energy);
+  tau.setMass(massFromP4(momentum.x, momentum.y, momentum.z, energy));
+  tau.setCharge(leptonCharge);
+  tau.setPDG(0);
+  tau.setGoodnessOfPID(-1.0F);
+  for (std::size_t candIndex = 0; candIndex < jet.particles_size(); ++candIndex) {
+    tau.addToParticles(jet.getParticles(candIndex));
+  }
+
+  auto pid = tauIds.create();
+  pid.setType(-1);
+  pid.setPDG(0);
+  pid.setLikelihood(-1.0F);
+  pid.setAlgorithmType(15);
+  pid.setParticle(tau);
+  for (std::size_t index = 0; index < 1 + kNumDecayModes; ++index) {
+    pid.addToParameters(-1.0F);
+  }
+}
+
+float mlTauAlg::leadingLeptonCharge(const edm4hep::ReconstructedParticle& jet) {
+  // Charge (+1/-1) of the highest-momentum electron or muon constituent; 0 if there is none.
+  float charge = 0.0F;
+  float maxP2 = -1.0F;
+  for (std::size_t candIndex = 0; candIndex < jet.particles_size(); ++candIndex) {
+    const auto cand = jet.getParticles(candIndex);
+    const auto absPdg = std::abs(cand.getPDG());
+    if (absPdg != 11 && absPdg != 13) {
+      continue;
+    }
+    const auto p = cand.getMomentum();
+    const auto p2 = p.x * p.x + p.y * p.y + p.z * p.z;
+    if (p2 > maxP2) {
+      maxP2 = p2;
+      charge = cand.getCharge() > 0 ? 1.0F : -1.0F;
+    }
+  }
+  return charge;
 }
 
 auto mlTauAlg::softmax(const float* logits, std::size_t size)

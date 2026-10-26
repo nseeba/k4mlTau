@@ -68,7 +68,7 @@ private:
   StatusCode loadMetadata();
   StatusCode initializeOnnx();
 
-  ModelInputs buildInputs(const edm4hep::ReconstructedParticleCollection& jets,
+  ModelInputs buildInputs(const std::vector<edm4hep::ReconstructedParticle>& jets,
                           const edm4hep::VertexCollection* primaryVertices) const;
   void applyInputScaling(ModelInputs& inputs) const;
   std::vector<Ort::Value> runInference(const ModelInputs& inputs) const;
@@ -76,10 +76,16 @@ private:
   LifetimeFeatures calculateLifetimeFeatures(const edm4hep::ReconstructedParticle& candidate,
                                              const edm4hep::VertexCollection* primaryVertices) const;
 
-  void fillOutputs(const ModelInputs& inputs,
-                   const std::vector<Ort::Value>& outputs,
-                   edm4hep::ReconstructedParticleCollection& tauParticles,
-                   edm4hep::ParticleIDCollection& tauIds) const;
+  void fillTau(const ModelInputs& inputs,
+               const std::vector<Ort::Value>& outputs,
+               std::size_t jetIndex,
+               edm4hep::ReconstructedParticleCollection& tauParticles,
+               edm4hep::ParticleIDCollection& tauIds) const;
+  void fillLeptonJet(const edm4hep::ReconstructedParticle& jet,
+                     float leptonCharge,
+                     edm4hep::ReconstructedParticleCollection& tauParticles,
+                     edm4hep::ParticleIDCollection& tauIds) const;
+  static float leadingLeptonCharge(const edm4hep::ReconstructedParticle& jet);
 
   static float softmaxSignalScore(const float* logits);
   static std::array<float, kNumDecayModes> softmax(const float* logits, std::size_t size);
@@ -93,6 +99,10 @@ private:
       this, "MetadataPath", "metadata.json", "Path to the mlTau metadata JSON"};
   Gaudi::Property<float> m_tauScoreCut{
       this, "TauScoreCut", 0.0F, "Minimum tau score for writing an output tau"};
+  Gaudi::Property<bool> m_vetoLeptonJets{
+      this, "VetoLeptonJets", true,
+      "Do not evaluate seed jets with an electron or muon constituent (as in the training "
+      "selection); they are written with score -1, decay mode -1 and the charge of the lepton"};
   Gaudi::Property<bool> m_useLifetimeVariables{
       this, "UseLifetimeVariables", true,
       "Fill cand_dz/cand_dxy features from candidate tracks and primary vertices"};
