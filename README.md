@@ -26,6 +26,11 @@ git clone https://github.com/nseeba/k4mlTau.git
 cd k4mlTau
 ```
 
+> **Note (branch `vertex_fix_model`):** this branch adds support for the new MultiParTau trained on the
+> vertex-corrected Fuτure v3 (the plots in [Performance](#5-performance) are from this model). Its model file
+> will be uploaded as a new release later. Until then, the commands below download the preprint model
+> (release v0.1.0), which also runs with this branch and gives the same results as on `main`.
+
 **Download the model** (from the release
 [v0.1.0](https://github.com/nseeba/k4mlTau/releases/tag/v0.1.0)) into `models/`:
 
@@ -127,8 +132,8 @@ All fields, options and the model interface: [docs/details.md](docs/details.md).
 
 ## 5. Performance
 
-Validation on 50 000 Z → ττ and 50 000 Z → qq events (CLD full simulation,
-√s = 91 GeV). The four tasks are evaluated as in the paper, on the test-split
+Validation of the new MultiParTau (vertex-corrected Fuτure v3; model file to be released) on 50 000 Z → ττ
+and 50 000 Z → qq events (CLD full simulation, √s = 91 GeV). The four tasks are evaluated as in the paper, on the test-split
 jets. k4mlTau reproduces the Python model (scores agree to ~10⁻⁷).
 
 <table>
@@ -142,11 +147,11 @@ jets. k4mlTau reproduces the Python model (scores agree to ~10⁻⁷).
   </tr>
 </table>
 
-The τh candidates with a τh ID score ≥ 0.89 (80% efficiency for true τh):
+The τh candidates with a τh ID score ≥ 0.94 (80% efficiency for true τh):
 
 <table>
   <tr>
-    <td align="center"><img src="docs/images/tau_mass_medium.png" width="360"><br>Visible τh mass: π±, ρ and a1 peaks</td>
+    <td align="center"><img src="docs/images/tau_mass_by_decay_mode.png" width="360"><br>Visible τh mass per reconstructed decay mode: π±, ρ and a1 peaks</td>
     <td align="center"><img src="docs/images/ditau_mass_medium.png" width="360"><br>Visible di-τh mass; same-sign (SS) pairs come from a wrong charge or a fake</td>
   </tr>
 </table>

@@ -127,6 +127,32 @@ StatusCode mlTauAlg::loadMetadata() {
     return StatusCode::FAILURE;
   }
   std::copy(decayModes.begin(), decayModes.end(), m_metadata.decayModeClassToHps.begin());
+
+  // Models trained on the vertex-corrected Fuτure v3 (model/ml-tau-model) use signed impact parameters,
+  // log-compressed significances and 0 for candidates without lifetime information.
+  if (metadata.contains("impact_parameter_features")) {
+    const auto ipFeatures = metadata["impact_parameter_features"];
+    m_metadata.signedImpactParameters = ipFeatures.value("signed", false);
+    const auto transform = ipFeatures.value("significance_transform", std::string("none"));
+    if (transform != "none" && transform != "log") {
+      error() << "Unsupported impact_parameter_features.significance_transform '" << transform
+              << "' (supported: none, log)" << endmsg;
+      return StatusCode::FAILURE;
+    }
+    m_metadata.logSignificance = transform == "log";
+    if (ipFeatures.value("invalid_value", 0.0F) != 0.0F) {
+      error() << "Unsupported impact_parameter_features.invalid_value (only 0 is supported)" << endmsg;
+      return StatusCode::FAILURE;
+    }
+    m_metadata.zeroInvalidImpactParameters = true;
+  }
+  info() << "Impact-parameter features: "
+         << (m_metadata.zeroInvalidImpactParameters
+                 ? std::string(m_metadata.signedImpactParameters ? "signed" : "unsigned") +
+                       (m_metadata.logSignificance ? ", log significance" : ", significance") +
+                       ", 0 if invalid"
+                 : std::string("unsigned, significance, InvalidLifetimeValue if invalid (original Fuτure v3)"))
+         << endmsg;
   return StatusCode::SUCCESS;
 }
 
@@ -224,6 +250,16 @@ mlTauAlg::buildInputs(const std::vector<edm4hep::ReconstructedParticle>& jets,
         massFromP4(jetMomentum.x, jetMomentum.y, jetMomentum.z, jetEnergy);
     inputs.seedKinematics.push_back({jetPt, jetEta, jetPhi, jetMass, jetEnergy});
     inputs.seedConstituents.emplace_back();
+    // Jet direction for the impact-parameter sign: double-precision sum of all constituent momenta, as in the
+    // Python clustering. The sign is decided by a projection that is ~0 for single-track jets (the PCA offset is
+    // perpendicular to the track), so the float-rounded jet momentum is not precise enough.
+    std::array<double, 3> jetMomentumDouble{0.0, 0.0, 0.0};
+    for (const auto& constituent : jet.getParticles()) {
+      const auto p = constituent.getMomentum();
+      jetMomentumDouble[0] += p.x;
+      jetMomentumDouble[1] += p.y;
+      jetMomentumDouble[2] += p.z;
+    }
 
     const auto nConstituents =
         std::min<std::size_t>(jet.particles_size(), kMaxCandidates);
@@ -260,7 +296,7 @@ mlTauAlg::buildInputs(const std::vector<edm4hep::ReconstructedParticle>& jets,
       setFeature(10, absPdg == 22 ? 1.0F : 0.0F);
       setFeature(11, isHadron && std::abs(charge) > 0.0F ? 1.0F : 0.0F);
       setFeature(12, isHadron && std::abs(charge) == 0.0F ? 1.0F : 0.0F);
-      const auto lifetime = calculateLifetimeFeatures(cand, primaryVertices);
+      const auto lifetime = calculateLifetimeFeatures(cand, primaryVertices, jetMomentumDouble);
       setFeature(13, lifetime.dz);
       setFeature(14, lifetime.dzSignificance);
       setFeature(15, lifetime.dxy);
@@ -277,20 +313,27 @@ mlTauAlg::buildInputs(const std::vector<edm4hep::ReconstructedParticle>& jets,
   return inputs;
 }
 
+mlTauAlg::LifetimeFeatures mlTauAlg::invalidLifetimeFeatures() const {
+  if (m_metadata.zeroInvalidImpactParameters) {
+    return {0.0F, 0.0F, 0.0F, 0.0F, false};
+  }
+  const auto invalid = m_invalidLifetimeValue.value();
+  return {invalid, 1.0F, invalid, 1.0F, false};
+}
+
 mlTauAlg::LifetimeFeatures mlTauAlg::calculateLifetimeFeatures(
     const edm4hep::ReconstructedParticle& candidate,
-    const edm4hep::VertexCollection* primaryVertices) const {
+    const edm4hep::VertexCollection* primaryVertices,
+    const std::array<double, 3>& jetMomentum) const {
   if (!m_useLifetimeVariables || primaryVertices == nullptr || primaryVertices->empty() ||
       candidate.tracks_size() == 0) {
-    const auto invalid = m_invalidLifetimeValue.value();
-    return {invalid, 1.0F, invalid, 1.0F, false};
+    return invalidLifetimeFeatures();
   }
 
   const auto vertex = (*primaryVertices)[0].getPosition();
   const auto track = candidate.getTracks(0);
   if (track.trackStates_size() == 0) {
-    const auto invalid = m_invalidLifetimeValue.value();
-    return {invalid, 1.0F, invalid, 1.0F, false};
+    return invalidLifetimeFeatures();
   }
 
   const auto state = track.getTrackStates(0);
@@ -378,7 +421,60 @@ mlTauAlg::LifetimeFeatures mlTauAlg::calculateLifetimeFeatures(
                             : 0.0F;
   const auto dzError = pcaZError;
 
-  return {dz, safeRatio(dz, dzError), dxy, safeRatio(dxy, dxyError), true};
+  if (!m_metadata.zeroInvalidImpactParameters) {
+    return {dz, safeRatio(dz, dzError), dxy, safeRatio(dxy, dxyError), true};
+  }
+
+  // As in model/ml-tau-model (ParT_dataloader.impact_parameter_features): neutral candidates and
+  // candidates without a usable error get 0 in all four features.
+  if (candidate.getCharge() == 0.0F || !(dzError > 0.0F) || !(dxyError > 0.0F)) {
+    return {0.0F, 0.0F, 0.0F, 0.0F, false};
+  }
+  // Sign as in ml-tau-data (lifetime.calc_all_signed_ip_for_jets): positive if the PCA lies in the
+  // direction of the jet as seen from the primary vertex, the same sign for dz and dxy.
+  // The sign is decided by a projection that is ~0 for single-track jets (the PCA offset is perpendicular to the
+  // track), so it is computed with the same arithmetic as ml-tau-data: PCA in float32 in the operation order of
+  // lifetime.py (calc_track_origin, calc_pca_arc_length_vectorized, calc_pca_vectorized), offset normalised in
+  // float32, jet direction and dot product in float64 (calc_all_signed_ip_for_jets).
+  // For ~2% of charged candidates (|projection| ~1e-8) the sign still differs from Python (e.g. numpy's own
+  // float32 sin/cos); there it is set by rounding and effectively random in the training data as well.
+  float sign = 1.0F;
+  if (m_metadata.signedImpactParameters) {
+    const float phiF = state.phi;
+    const float d0F = state.D0;
+    const float tanLF = state.tanLambda;
+    const float sinF = std::sin(phiF);
+    const float cosF = std::cos(phiF);
+    const float ax = static_cast<float>(reference.x) + sinF * d0F;
+    const float ay = static_cast<float>(reference.y) - cosF * d0F;
+    const float az = static_cast<float>(state.Z0) + static_cast<float>(reference.z);
+    const float numeratorF = -((ax - vertex.x) * cosF + (ay - vertex.y) * sinF + (az - vertex.z) * tanLF);
+    const float denominatorF = cosF * cosF + sinF * sinF + tanLF * tanLF;
+    const float arcF = numeratorF / denominatorF;
+    const float pcaXF = arcF * cosF + ax;
+    const float pcaYF = arcF * sinF + ay;
+    const float pcaZF = arcF * tanLF + az;
+    const float offX = pcaXF - vertex.x;
+    const float offY = pcaYF - vertex.y;
+    const float offZ = pcaZF - vertex.z;
+    const float offNorm = std::sqrt(offX * offX + offY * offY + offZ * offZ);
+    if (offNorm > 1.0e-10F) {
+      const double jetNorm = std::sqrt(jetMomentum[0] * jetMomentum[0] + jetMomentum[1] * jetMomentum[1] +
+                                       jetMomentum[2] * jetMomentum[2]);
+      const double jetNormSafe = jetNorm > 1.0e-10 ? jetNorm : 1.0;
+      const double dot = static_cast<double>(offX / offNorm) * (jetMomentum[0] / jetNormSafe) +
+                         static_cast<double>(offY / offNorm) * (jetMomentum[1] / jetNormSafe) +
+                         static_cast<double>(offZ / offNorm) * (jetMomentum[2] / jetNormSafe);
+      sign = dot >= 0.0 ? 1.0F : -1.0F;
+    }
+  }
+  const auto signedDz = sign * dz;
+  const auto signedDxy = sign * dxy;
+  auto compress = [this](float significance) {
+    return m_metadata.logSignificance ? std::copysign(std::log1p(std::abs(significance)), significance)
+                                      : significance;
+  };
+  return {signedDz, compress(signedDz / dzError), signedDxy, compress(signedDxy / dxyError), true};
 }
 
 void mlTauAlg::dumpInputs(const ModelInputs& inputs) const {

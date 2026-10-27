@@ -104,6 +104,19 @@ the input feature order, the output mapping, the decay-mode mapping and,
 optionally, the input scaling (applied only if `input_scaling.enabled` is
 `true`, with `feature_indices`, `mean` and `std`).
 
+The optional metadata field `impact_parameter_features` selects the definition of the four
+impact-parameter features (13–16). Bundles of models trained on the vertex-corrected Fuτure v3
+(`model/ml-tau-model`) contain
+
+```json
+"impact_parameter_features": {"signed": true, "significance_transform": "log", "invalid_value": 0.0}
+```
+
+i.e. signed d_z and d_xy (positive if the track's point of closest approach lies in the jet direction as
+seen from the primary vertex), significances compressed as sign(s)·log(1 + |s|), and 0 for neutral
+candidates and candidates without a track. Without the field (preprint model, original Fuτure v3) the
+features are unsigned d_z, d_z/σ, d_xy, d_xy/σ with `InvalidLifetimeValue` for candidates without a track.
+
 ONNX inputs (the first 20 constituents of each seed jet, in the order of the input particle collection):
 
 | Name | Shape | Content |

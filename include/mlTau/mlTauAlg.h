@@ -39,6 +39,12 @@ private:
     std::vector<float> scalingMean;
     std::vector<float> scalingStd;
     std::array<int, kNumDecayModes> decayModeClassToHps{0, 1, 2, 10, 11, 15};
+    // Impact-parameter features 13-16, from the metadata field "impact_parameter_features".
+    // Absent (models trained on the original Fuτure v3): unsigned dz, dz/sigma_dz, dxy, dxy/sigma_dxy
+    // and InvalidLifetimeValue for candidates without lifetime information.
+    bool signedImpactParameters = false;
+    bool logSignificance = false;
+    bool zeroInvalidImpactParameters = false;
   };
 
   struct SeedKinematics {
@@ -74,7 +80,9 @@ private:
   std::vector<Ort::Value> runInference(const ModelInputs& inputs) const;
   void dumpInputs(const ModelInputs& inputs) const;
   LifetimeFeatures calculateLifetimeFeatures(const edm4hep::ReconstructedParticle& candidate,
-                                             const edm4hep::VertexCollection* primaryVertices) const;
+                                             const edm4hep::VertexCollection* primaryVertices,
+                                             const std::array<double, 3>& jetMomentum) const;
+  LifetimeFeatures invalidLifetimeFeatures() const;
 
   void fillTau(const ModelInputs& inputs,
                const std::vector<Ort::Value>& outputs,
